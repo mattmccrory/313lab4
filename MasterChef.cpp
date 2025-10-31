@@ -88,7 +88,16 @@ static void timerHandler( int sig, siginfo_t *si, void *uc )
 	/* TODO This Section - 2 */
 	// Officially complete the step using completedSteps and completeCount
 
-	// Ready to remove that dependency, call the trigger for the appropriate handler
+    if (comp_item != nullptr) {
+        comp_item->PrintComplete();
+        completedSteps->push_back(comp_item->id);
+        completeCount++;
+
+        timer_delete(comp_item->t_id);
+
+        raise(SIGUSR1);
+    }
+
 	/* End Section - 2 */
 }
 
@@ -97,8 +106,13 @@ static void timerHandler( int sig, siginfo_t *si, void *uc )
 // To Complete - Section 3
 void RemoveDepHandler(int sig) {
 	/* TODO This Section - 3 */
-	// Foreach step that has been completed since last run, remove it as a dependency
-	/* End Section - 3 */
+    if (completedSteps != nullptr && recipeSteps != nullptr) {
+        for (int depId : *completedSteps) {
+            recipeSteps->RemoveDependency(depId);
+        }
+        completedSteps->clear();
+    }
+    /* End Section - 3 */
 }
 
 // Associate the signals to the signal handlers as appropriate
@@ -124,10 +138,33 @@ int main(int argc, char **argv)
 
 	/* TODO This Section - 1 */
 	// Associate the signal SIGRTMIN with the sa using the sigaction function
-	// Associate the appropriate handler with the SIGUSR1 signal, for removing dependencies
-	
+	if (sigaction(SIGRTMIN, &sa, NULL) == -1) {
+        perror("sigaction - SIGRTMIN");
+        exit(1);
+    }
+    // Associate the appropriate handler with the SIGUSR1 signal, for removing dependencies
+	struct sigaction sa_usr;
+    sa_usr.sa_handler = RemoveDepHandler;
+    sa_usr.sa_flags = 0;
+    sigemptyset(&sa_usr.sa_mask);
+    if (sigaction(SIGUSR1, &sa_usr, NULL) == -1) {
+        perror("sigaction - SIGUSR1");
+        exit(1);
+    }
 	// Until all steps have been completed, check if steps are ready to be run and create a timer for them if so
-	/* End Section - 1 */
+	while (completeCount < recipeSteps->Count()) {
+        vector<Step*> ready = recipeSteps->GetReadySteps();
+        for (Step* s : ready) {
+            if (!s->running) {
+                s->running = true;
+                // 1 CSV minute = 1 second
+                int expire_seconds = s->duration;
+                makeTimer(s, expire_seconds);
+            }
+        }
+        pause();
+    }
+    /* End Section - 1 */
 
 	cout << "Enjoy!" << endl;
 }
